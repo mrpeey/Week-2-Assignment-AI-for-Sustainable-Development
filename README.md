@@ -146,6 +146,24 @@ jupyter notebook notebooks/SmartFarm_AI_Week2_Demo.ipynb
 python notebooks/SmartFarm_AI_Week2_Demo.py
 ```
 
+### TensorFlow (for CNN/RL features)
+
+TensorFlow currently does not support Python 3.14 on Windows. Use Python 3.11 in a virtual environment:
+
+Option A — One‑click (Windows):
+1) Double‑click `create_tf_env.bat` (creates `.venv-tf311` and installs TensorFlow)
+2) Activate: `.venv-tf311\Scripts\activate.bat`
+3) Run your app (dashboard/API) from this shell
+
+Option B — Conda:
+```powershell
+conda create -n tf311 python=3.11 -y
+conda activate tf311
+pip install -r requirements-tf.txt
+```
+
+Once activated, CNN (crop disease) and RL (smart irrigation) modules will use TensorFlow automatically.
+
 #### Full Development Setup
 
 1. **Install all ML dependencies**

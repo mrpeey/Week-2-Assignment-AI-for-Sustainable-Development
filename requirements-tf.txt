@@ -1,0 +1,6 @@
+# TensorFlow runtime for Windows CPU (use Python 3.11)
+# Tested with TF 2.16 on Python 3.11
+tensorflow==2.16.1
+# Optional: install these if you need more ML modules
+# xgboost==2.0.3
+# lightgbm==4.3.0
