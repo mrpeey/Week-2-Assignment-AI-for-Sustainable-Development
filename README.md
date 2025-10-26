@@ -8,6 +8,7 @@
 > - Speaker notes: `docs/pitch/SmartFarm_AI_Pitch_Speaker_Notes.md`
 > - One‑pager: `docs/pitch/SmartFarm_AI_OnePager.md`
 > - PLP Community article: `docs/PLP_Community_Article.md`
+> - Export to PowerPoint: run `export_pitch.bat` (creates `docs/pitch/SmartFarm_AI_Pitch_Deck.pptx`)
 
 > PLP Community Article: see `docs/PLP_Community_Article.md` for a ready-to-post narrative.
 
