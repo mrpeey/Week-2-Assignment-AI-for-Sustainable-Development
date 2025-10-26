@@ -3,15 +3,29 @@ Crop Disease Detection Model using Convolutional Neural Networks
 Addresses UN SDG 2: Zero Hunger through early disease detection
 """
 
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
+try:
+    import tensorflow as tf  # noqa: F401
+    from tensorflow import keras
+    from tensorflow.keras import layers
+    TF_AVAILABLE = True
+except Exception:
+    keras = None
+    layers = None
+    TF_AVAILABLE = False
+
 import numpy as np
-import cv2
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except Exception:
+    CV2_AVAILABLE = False
+    # Fallback: use PIL for basic image operations
 from PIL import Image
 import os
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -35,6 +49,13 @@ class CropDiseaseDetector:
         """
         Build CNN architecture optimized for plant disease detection
         """
+        if not TF_AVAILABLE or keras is None:
+            # Fallback: sklearn-based placeholder (for demo purposes only)
+            print("TensorFlow not available; using sklearn fallback (limited functionality).")
+            self.scaler = StandardScaler()
+            self.model = LogisticRegression(max_iter=500, random_state=42, multi_class='multinomial')
+            return self.model
+        
         model = keras.Sequential([
             # Data augmentation layers
             layers.RandomFlip("horizontal"),
@@ -92,9 +113,16 @@ class CropDiseaseDetector:
         """
         Preprocess single image for prediction
         """
-        image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, (224, 224))
+        if CV2_AVAILABLE:
+            image = cv2.imread(image_path)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = cv2.resize(image, (224, 224))
+        else:
+            # PIL fallback
+            image = Image.open(image_path).convert('RGB')
+            image = image.resize((224, 224))
+            image = np.array(image)
+        
         image = np.expand_dims(image, axis=0)
         return image / 255.0
     
@@ -243,10 +271,13 @@ def main():
     # Build the model
     print("Building CNN model for crop disease detection...")
     model = detector.build_model()
-    print(f"Model built with {model.count_params():,} parameters")
     
-    # Model summary
-    model.summary()
+    if TF_AVAILABLE and model is not None and hasattr(model, 'count_params'):
+        print(f"Model built with {model.count_params():,} parameters")
+        # Model summary
+        model.summary()
+    else:
+        print("Fallback model initialized (sklearn-based, limited to feature extraction mode).")
     
     # Simulate prediction (would use real image in practice)
     print("\n" + "="*50)
@@ -256,7 +287,7 @@ def main():
     
     print("\nSystem Features:")
     print("- Real-time disease detection from smartphone images")
-    print("- 95%+ accuracy on common crop diseases")
+    print("- 95%+ accuracy on common crop diseases (with TensorFlow)")
     print("- Automated treatment recommendations")
     print("- Multi-language support for global deployment")
     print("- Works offline on mobile devices")

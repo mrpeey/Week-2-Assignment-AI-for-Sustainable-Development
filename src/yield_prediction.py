@@ -11,11 +11,26 @@ from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-import xgboost as xgb
-import lightgbm as lgb
+from sklearn.neural_network import MLPRegressor
+# Optional ML backends
+try:
+    import tensorflow as tf  # noqa: F401
+    from tensorflow import keras
+    from tensorflow.keras import layers
+    TF_AVAILABLE = True
+except Exception:
+    keras = None
+    layers = None
+    TF_AVAILABLE = False
+
+try:
+    import xgboost as xgb  # noqa: F401
+    XGB_AVAILABLE = True
+except Exception:
+    xgb = None
+    XGB_AVAILABLE = False
+
+# LightGBM is not used in code; avoid hard dependency
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime, timedelta
@@ -37,6 +52,8 @@ class YieldPredictionSystem:
         """
         Prepare and engineer features from raw agricultural data
         """
+        # Ensure all expected base columns exist; fill missing with NaN so downstream ops work
+        df_features = df.copy()
         # Weather features
         weather_features = [
             'temperature_avg', 'temperature_max', 'temperature_min',
@@ -77,11 +94,12 @@ class YieldPredictionSystem:
         ]
         
         # All feature categories
-        all_features = (weather_features + soil_features + satellite_features + 
-                       practice_features + temporal_features + economic_features)
-        
-        # Feature engineering
-        df_features = df.copy()
+        all_features = (weather_features + soil_features + satellite_features +
+                        practice_features + temporal_features + economic_features)
+
+        for col in all_features:
+            if col not in df_features.columns:
+                df_features[col] = np.nan
         
         # Temperature-based features
         df_features['temperature_range'] = df_features['temperature_max'] - df_features['temperature_min']
@@ -101,8 +119,14 @@ class YieldPredictionSystem:
         df_features['vegetation_health'] = df_features['ndvi_avg'] * df_features['lai_leaf_area_index']
         
         # Economic efficiency
-        df_features['input_cost_efficiency'] = (df_features['fertilizer_cost_per_ha'] + 
-                                               df_features['labor_cost_per_ha']) / df_features['yield_tons_per_hectare']
+        if 'yield_tons_per_hectare' in df_features.columns:
+            # Avoid divide-by-zero
+            denom = df_features['yield_tons_per_hectare'].replace(0, np.nan)
+            df_features['input_cost_efficiency'] = (
+                df_features['fertilizer_cost_per_ha'] + df_features['labor_cost_per_ha']
+            ) / denom
+        else:
+            df_features['input_cost_efficiency'] = np.nan
         
         # Growing degree days (simplified)
         df_features['growing_degree_days'] = np.maximum(0, df_features['temperature_avg'] - 10) * df_features['growing_season_days']
@@ -217,6 +241,8 @@ class YieldPredictionSystem:
     
     def train_xgboost(self, X_train, y_train):
         """Train XGBoost model"""
+        if not XGB_AVAILABLE:
+            return None
         xgb_params = {
             'n_estimators': 200,
             'max_depth': 6,
@@ -225,54 +251,76 @@ class YieldPredictionSystem:
             'colsample_bytree': 0.8,
             'random_state': 42
         }
-        
+
         xgb_model = xgb.XGBRegressor(**xgb_params)
         xgb_model.fit(X_train, y_train)
-        
+
         return xgb_model
     
     def train_neural_network(self, X_train, y_train, X_val, y_val):
-        """Train deep neural network"""
-        model = keras.Sequential([
-            layers.Dense(256, activation='relu', input_shape=(X_train.shape[1],)),
-            layers.BatchNormalization(),
-            layers.Dropout(0.3),
-            
-            layers.Dense(128, activation='relu'),
-            layers.BatchNormalization(),
-            layers.Dropout(0.3),
-            
-            layers.Dense(64, activation='relu'),
-            layers.BatchNormalization(),
-            layers.Dropout(0.2),
-            
-            layers.Dense(32, activation='relu'),
-            layers.Dropout(0.2),
-            
-            layers.Dense(1, activation='linear')
-        ])
-        
-        model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=0.001),
-            loss='mse',
-            metrics=['mae']
-        )
-        
-        callbacks = [
-            keras.callbacks.EarlyStopping(patience=20, restore_best_weights=True),
-            keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=10)
-        ]
-        
-        history = model.fit(
-            X_train, y_train,
-            validation_data=(X_val, y_val),
-            epochs=100,
-            batch_size=32,
-            callbacks=callbacks,
-            verbose=0
-        )
-        
-        return model, history
+        """Train a neural model. Uses TensorFlow if available, else sklearn MLP as fallback."""
+        if TF_AVAILABLE and keras is not None:
+            model = keras.Sequential([
+                layers.Dense(256, activation='relu', input_shape=(X_train.shape[1],)),
+                layers.BatchNormalization(),
+                layers.Dropout(0.3),
+
+                layers.Dense(128, activation='relu'),
+                layers.BatchNormalization(),
+                layers.Dropout(0.3),
+
+                layers.Dense(64, activation='relu'),
+                layers.BatchNormalization(),
+                layers.Dropout(0.2),
+
+                layers.Dense(32, activation='relu'),
+                layers.Dropout(0.2),
+
+                layers.Dense(1, activation='linear')
+            ])
+
+            model.compile(
+                optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                loss='mse',
+                metrics=['mae']
+            )
+
+            callbacks = [
+                keras.callbacks.EarlyStopping(patience=20, restore_best_weights=True),
+                keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=10)
+            ]
+
+            history = model.fit(
+                X_train, y_train,
+                validation_data=(X_val, y_val),
+                epochs=100,
+                batch_size=32,
+                callbacks=callbacks,
+                verbose=0
+            )
+            return model, history
+        else:
+            # Sklearn MLPRegressor fallback (no GPU/TF needed)
+            mlp = MLPRegressor(
+                hidden_layer_sizes=(256, 128, 64, 32),
+                activation='relu',
+                solver='adam',
+                learning_rate_init=0.001,
+                max_iter=300,
+                random_state=42,
+                early_stopping=True,
+                n_iter_no_change=20,
+                validation_fraction=0.2
+            )
+            mlp.fit(X_train, y_train)
+
+            class SklearnWrapper:
+                def __init__(self, reg):
+                    self.reg = reg
+                def predict(self, X):
+                    return self.reg.predict(X).reshape(-1, 1)
+
+            return SklearnWrapper(mlp), None
     
     def train_ensemble(self, df):
         """Train ensemble of models for yield prediction"""
@@ -305,21 +353,24 @@ class YieldPredictionSystem:
         # Train models
         print("Training Random Forest...")
         rf_model = self.train_random_forest(X_train, y_train)
-        
-        print("Training XGBoost...")
+
+        print("Training XGBoost..." + (" (available)" if XGB_AVAILABLE else " (skipped: not installed)"))
         xgb_model = self.train_xgboost(X_train, y_train)
-        
-        print("Training Neural Network...")
+
+        print("Training Neural Network..." + (" (TensorFlow)" if TF_AVAILABLE else " (sklearn MLP fallback)"))
         nn_model, nn_history = self.train_neural_network(
             X_train_scaled, y_train, X_val_scaled, y_val
         )
         
-        # Store models
-        self.models = {
+    # Store models
+    # Store only available models
+        models = {
             'random_forest': rf_model,
-            'xgboost': xgb_model,
             'neural_network': nn_model
         }
+        if xgb_model is not None:
+            models['xgboost'] = xgb_model
+        self.models = models
         
         # Evaluate models
         results = self.evaluate_models(X_test_scaled, y_test)
@@ -375,15 +426,22 @@ class YieldPredictionSystem:
         
         for name, model in self.models.items():
             if name == 'neural_network':
-                pred = model.predict(X_scaled)[0][0]
+                pred = float(model.predict(X_scaled)[0][0])
             else:
-                pred = model.predict(X)[0]
+                pred = float(model.predict(X)[0])
             predictions[name] = pred
         
-        # Ensemble prediction (weighted average)
-        ensemble_pred = (predictions['random_forest'] * 0.4 + 
-                        predictions['xgboost'] * 0.4 + 
-                        predictions['neural_network'] * 0.2)
+        # Ensemble prediction (weighted average over available models)
+        default_weights = {
+            'random_forest': 0.4,
+            'xgboost': 0.4,
+            'neural_network': 0.2
+        }
+        # Normalize weights to sum to 1 for available models
+        available = [k for k in predictions.keys() if k in default_weights]
+        total_w = sum(default_weights[k] for k in available)
+        weights = {k: default_weights[k] / total_w for k in available} if total_w > 0 else {k: 1/len(available) for k in available}
+        ensemble_pred = sum(predictions[k] * weights[k] for k in available)
         
         return {
             'ensemble_prediction': ensemble_pred,

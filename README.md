@@ -111,6 +111,8 @@ SmartFarm-AI/
 
 ### 🚀 Getting Started
 
+> **⚡ TensorFlow Installation**: For full CNN and deep learning features, see **[TENSORFLOW_SETUP.md](TENSORFLOW_SETUP.md)** for step-by-step installation instructions and troubleshooting.
+
 #### Quick Demo (Recommended for First Time)
 
 **Option A: Dashboard Only**

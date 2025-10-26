@@ -17,6 +17,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers import pipeline
 import requests
 from datetime import datetime, timedelta
+import argparse
 import json
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestRegressor
@@ -33,6 +34,16 @@ try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('punkt')
+
+# Newer versions of NLTK (>=3.9) require 'punkt_tab' alongside 'punkt'
+try:
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    try:
+        nltk.download('punkt_tab')
+    except Exception:
+        # Fallback: ignore if unavailable; word_tokenize will raise with clear error
+        pass
 
 try:
     nltk.data.find('corpora/stopwords')
@@ -495,28 +506,31 @@ def generate_sample_news_data():
     
     return sample_articles
 
-def generate_sample_price_data():
+def generate_sample_price_data(days: int = 300):
     """
     Generate sample historical price data
     """
     np.random.seed(42)
-    dates = pd.date_range(start='2024-01-01', end='2024-10-25', freq='D')
-    
+    # Use recent 'days' to keep output current by date
+    end_date = pd.Timestamp.today().normalize()
+    start_date = end_date - pd.Timedelta(days=days-1)
+    dates = pd.date_range(start=start_date, end=end_date, freq='D')
+
     # Simulate price trend with some volatility
     base_price = 300  # USD per ton
     trend = 0.001  # Slight upward trend
     volatility = 0.02
-    
+
     prices = [base_price]
-    for i in range(1, len(dates)):
+    for _ in range(1, len(dates)):
         daily_change = np.random.normal(trend, volatility)
         new_price = prices[-1] * (1 + daily_change)
         prices.append(new_price)
-    
+
     return prices
 
 # Demonstration and example usage
-def main():
+def main(commodity: str = 'rice', n_articles: int = 5, days: int = 300):
     """
     Demonstration of the market intelligence system
     """
@@ -531,13 +545,16 @@ def main():
     
     # Generate sample data
     news_data = generate_sample_news_data()
-    price_data = generate_sample_price_data()
+    # Limit number of articles if requested
+    if isinstance(n_articles, int) and n_articles > 0:
+        news_data = news_data[:min(len(news_data), n_articles)]
+    price_data = generate_sample_price_data(days=days)
     
     print(f"\nAnalyzing {len(news_data)} news articles...")
     print(f"Using {len(price_data)} days of price data...")
     
     # Generate comprehensive market report
-    report = market_system.generate_market_report(news_data, price_data, 'rice')
+    report = market_system.generate_market_report(news_data, price_data, commodity)
     
     # Display results
     print(f"\n" + "="*50)
@@ -610,4 +627,10 @@ def main():
     return market_system
 
 if __name__ == "__main__":
-    market_intelligence = main()
+    parser = argparse.ArgumentParser(description="Agricultural Market Intelligence Demo")
+    parser.add_argument("--commodity", type=str, default="rice", help="Commodity name for the report")
+    parser.add_argument("--articles", type=int, default=5, help="Number of sample news articles to analyze (max 5 in demo)")
+    parser.add_argument("--days", type=int, default=300, help="Number of days of synthetic price data to simulate")
+    args = parser.parse_args()
+
+    market_intelligence = main(commodity=args.commodity, n_articles=args.articles, days=args.days)

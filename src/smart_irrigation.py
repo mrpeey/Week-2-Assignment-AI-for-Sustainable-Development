@@ -6,11 +6,21 @@ Addresses UN SDG 2: Zero Hunger through efficient resource management
 
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-import gym
-from gym import spaces
+try:
+    import tensorflow as tf  # noqa: F401
+    from tensorflow import keras
+    from tensorflow.keras import layers
+    TF_AVAILABLE = True
+except Exception:  # ImportError or runtime errors if TF not supported on this Python
+    keras = None
+    layers = None
+    TF_AVAILABLE = False
+try:
+    import gym  # Classic Gym
+    from gym import spaces
+except Exception:
+    import gymnasium as gym  # Fallback to Gymnasium
+    from gymnasium import spaces
 import matplotlib.pyplot as plt
 from collections import deque
 import random
@@ -198,12 +208,14 @@ class IrrigationEnvironment(gym.Env):
         
         return total_reward
 
-class DQNAgent:
+class DQNAgentTF:
     """
-    Deep Q-Network agent for irrigation optimization
+    Deep Q-Network agent for irrigation optimization (TensorFlow backend)
     """
-    
+
     def __init__(self, state_size, action_size, learning_rate=0.001):
+        if not TF_AVAILABLE or keras is None:
+            raise RuntimeError("TensorFlow/Keras not available for DQNAgentTF")
         self.state_size = state_size
         self.action_size = action_size
         self.memory = deque(maxlen=10000)
@@ -212,90 +224,129 @@ class DQNAgent:
         self.epsilon_decay = 0.995
         self.learning_rate = learning_rate
         self.gamma = 0.95  # Discount factor
-        
+
         # Build neural networks
         self.q_network = self._build_model()
         self.target_network = self._build_model()
         self.update_target_network()
-        
+
     def _build_model(self):
         """Build the neural network for Q-learning"""
         model = keras.Sequential([
             layers.Dense(128, activation='relu', input_shape=(self.state_size,)),
             layers.BatchNormalization(),
             layers.Dropout(0.2),
-            
+
             layers.Dense(64, activation='relu'),
             layers.BatchNormalization(),
             layers.Dropout(0.2),
-            
+
             layers.Dense(32, activation='relu'),
             layers.Dropout(0.1),
-            
+
             layers.Dense(16, activation='relu'),
-            
+
             # Output layer: single continuous action (irrigation amount)
             layers.Dense(1, activation='sigmoid')  # 0-1, will be scaled to 0-100mm
         ])
-        
+
         model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate),
             loss='mse'
         )
-        
+
         return model
-    
+
     def update_target_network(self):
         """Copy weights from main network to target network"""
         self.target_network.set_weights(self.q_network.get_weights())
-    
+
     def remember(self, state, action, reward, next_state, done):
         """Store experience in replay memory"""
         self.memory.append((state, action, reward, next_state, done))
-    
+
     def act(self, state):
         """Choose action using epsilon-greedy policy"""
         if np.random.random() <= self.epsilon:
             # Random action (exploration)
             return np.array([np.random.uniform(0, 100)])
-        
+
         # Q-network prediction (exploitation)
         q_values = self.q_network.predict(state.reshape(1, -1), verbose=0)
         return q_values[0] * 100  # Scale to 0-100mm
-    
+
     def replay(self, batch_size=32):
         """Train the model on a batch of experiences"""
         if len(self.memory) < batch_size:
             return
-        
+
         batch = random.sample(self.memory, batch_size)
         states = np.array([e[0] for e in batch])
-        actions = np.array([e[1] for e in batch])
         rewards = np.array([e[2] for e in batch])
         next_states = np.array([e[3] for e in batch])
         dones = np.array([e[4] for e in batch])
-        
+
         # Current Q-values
         current_q_values = self.q_network.predict(states, verbose=0)
-        
+
         # Next Q-values from target network
         next_q_values = self.target_network.predict(next_states, verbose=0)
-        
+
         # Update Q-values
-        for i in range(batch_size):
+        for i in range(current_q_values.shape[0]):
             if dones[i]:
                 target = rewards[i]
             else:
                 target = rewards[i] + self.gamma * np.max(next_q_values[i])
-            
             current_q_values[i] = target
-        
+
         # Train the model
         self.q_network.fit(states, current_q_values, epochs=1, verbose=0)
-        
+
         # Decay epsilon
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
+
+
+class HeuristicAgent:
+    """Lightweight, TensorFlow-free policy for irrigation decisions.
+    Keeps the same interface used by the controller so training/evaluation code runs.
+    """
+
+    def __init__(self, env, state_size, action_size):
+        self.env = env
+        self.state_size = state_size
+        self.action_size = action_size
+        self.memory = deque(maxlen=1_000)
+        # Dummy exploration attributes for compatibility
+        self.epsilon = 0.0
+        self.epsilon_min = 0.0
+        self.epsilon_decay = 1.0
+
+    def update_target_network(self):
+        return
+
+    def remember(self, state, action, reward, next_state, done):
+        self.memory.append((state, action, reward, next_state, done))
+
+    def act(self, state):
+        # State layout matches IrrigationEnvironment._get_observation
+        soil_m = float(state[0])
+        rainfall = float(state[2])
+        et = float(state[5])
+        optimal_min, optimal_max = self.env.crop_params['optimal_moisture_range']
+        target_m = (optimal_min + optimal_max) / 2.0
+        # Simple water balance to move toward target moisture accounting for ET and rainfall
+        needed = target_m - soil_m + et - rainfall
+        # Be conservative: cap irrigation to avoid over-watering; allow more when stressed
+        stress_threshold = self.env.crop_params.get('stress_threshold', 25)
+        cap = 25.0 if soil_m < stress_threshold else 15.0
+        irrigation = np.clip(needed, 0.0, cap)
+        return np.array([irrigation], dtype=np.float32)
+
+    def replay(self, batch_size=32):
+        # No learning in heuristic mode
+        return
 
 class SmartIrrigationController:
     """
@@ -304,10 +355,17 @@ class SmartIrrigationController:
     
     def __init__(self):
         self.env = IrrigationEnvironment()
-        self.agent = DQNAgent(
-            state_size=self.env.observation_space.shape[0],
-            action_size=1
-        )
+        state_size = self.env.observation_space.shape[0]
+        if TF_AVAILABLE:
+            try:
+                self.agent = DQNAgentTF(state_size=state_size, action_size=1)
+            except Exception:
+                # Any runtime TF issues fall back to heuristic
+                self.agent = HeuristicAgent(self.env, state_size=state_size, action_size=1)
+                print("TensorFlow not available; using heuristic irrigation policy.")
+        else:
+            self.agent = HeuristicAgent(self.env, state_size=state_size, action_size=1)
+            print("TensorFlow not available; using heuristic irrigation policy.")
         self.training_history = []
         
     def train(self, episodes=500):
@@ -566,13 +624,17 @@ def main():
     print("- Better adaptation to climate variability")
     print("- Increased farming sustainability")
     
-    # Demonstrate water savings
-    baseline_water = 600  # mm per season (typical)
-    optimized_water = avg_water
-    water_savings = ((baseline_water - optimized_water) / baseline_water) * 100
+    # Demonstrate water savings vs. a simple baseline schedule
+    # Baseline: daily irrigation to cover ET plus a small buffer (5mm), ignoring soil storage
+    et = np.array(controller.env.weather_data['evapotranspiration'])
+    rain = np.array(controller.env.weather_data['rainfall'])
+    baseline_daily = np.maximum(0.0, et - rain + 5.0)
+    baseline_water = float(np.sum(baseline_daily))  # mm per season
+    optimized_water = float(avg_water)
+    water_savings = ((baseline_water - optimized_water) / baseline_water) * 100 if baseline_water > 0 else 0.0
     
     print(f"\nWater Efficiency Analysis:")
-    print(f"Baseline Water Usage: {baseline_water} mm/season")
+    print(f"Baseline Water Usage: {baseline_water:.1f} mm/season")
     print(f"Optimized Water Usage: {optimized_water:.1f} mm/season")
     print(f"Water Savings: {water_savings:.1f}%")
     
