@@ -24,51 +24,59 @@ import json
 # from smart_irrigation import SmartIrrigationController
 # from market_intelligence import MarketIntelligenceSystem
 
-# Configure Streamlit page
-st.set_page_config(
-    page_title="SmartFarm AI Dashboard",
-    page_icon="🌱",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+def configure_page() -> None:
+    """Configure Streamlit page and apply global styles.
 
-# Custom CSS for better styling
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 3rem;
-        color: #2E8B57;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .metric-card {
-        background: linear-gradient(90deg, #4CAF50, #45a049);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        margin: 0.5rem 0;
-    }
-    .alert-warning {
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
-        color: #856404;
-        padding: 1rem;
-        border-radius: 5px;
-        margin: 1rem 0;
-    }
-    .alert-success {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        color: #155724;
-        padding: 1rem;
-        border-radius: 5px;
-        margin: 1rem 0;
-    }
-    .sidebar .sidebar-content {
-        background-color: #f8f9fa;
-    }
-</style>
-""", unsafe_allow_html=True)
+    This is called only when running under Streamlit to avoid import-time
+    API calls that fail when the script is executed with plain Python.
+    """
+    st.set_page_config(
+        page_title="SmartFarm AI Dashboard",
+        page_icon="🌱",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+
+    # Custom CSS for better styling
+    st.markdown(
+        """
+        <style>
+            .main-header {
+                font-size: 3rem;
+                color: #2E8B57;
+                text-align: center;
+                margin-bottom: 2rem;
+            }
+            .metric-card {
+                background: linear-gradient(90deg, #4CAF50, #45a049);
+                padding: 1rem;
+                border-radius: 10px;
+                color: white;
+                margin: 0.5rem 0;
+            }
+            .alert-warning {
+                background-color: #fff3cd;
+                border: 1px solid #ffeaa7;
+                color: #856404;
+                padding: 1rem;
+                border-radius: 5px;
+                margin: 1rem 0;
+            }
+            .alert-success {
+                background-color: #d4edda;
+                border: 1px solid #c3e6cb;
+                color: #155724;
+                padding: 1rem;
+                border-radius: 5px;
+                margin: 1rem 0;
+            }
+            .sidebar .sidebar-content {
+                background-color: #f8f9fa;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 class SmartFarmDashboard:
     """
@@ -607,8 +615,27 @@ class SmartFarmDashboard:
 # Main execution
 def main():
     """Main function to run the dashboard"""
+    # Configure page only within a valid Streamlit context
+    configure_page()
     dashboard = SmartFarmDashboard()
     dashboard.run()
 
 if __name__ == "__main__":
-    main()
+    # If not running via `streamlit run`, launch the app using Streamlit CLI
+    def _running_in_streamlit() -> bool:
+        try:
+            from streamlit.runtime.scriptrunner import get_script_run_ctx  # type: ignore
+            return get_script_run_ctx() is not None
+        except Exception:
+            return False
+
+    if _running_in_streamlit():
+        main()
+    else:
+        # Spawn a Streamlit process so `python src/dashboard.py` just works
+        import os
+        import sys
+        import subprocess
+
+        script_path = os.path.abspath(__file__)
+        subprocess.run([sys.executable, "-m", "streamlit", "run", script_path], check=False)
