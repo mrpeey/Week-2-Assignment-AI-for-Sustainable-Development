@@ -3,6 +3,12 @@
 
 **Theme:** "Machine Learning Meets the UN Sustainable Development Goals (SDGs)"
 
+> Pitch materials:
+> - Deck: `docs/pitch/SmartFarm_AI_Pitch_Deck.md`
+> - Speaker notes: `docs/pitch/SmartFarm_AI_Pitch_Speaker_Notes.md`
+> - One‑pager: `docs/pitch/SmartFarm_AI_OnePager.md`
+> - PLP Community article: `docs/PLP_Community_Article.md`
+
 > PLP Community Article: see `docs/PLP_Community_Article.md` for a ready-to-post narrative.
 
 ### 🌱 Project Overview
