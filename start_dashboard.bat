@@ -13,4 +13,8 @@ echo Starting dashboard...
 echo The dashboard will open in your browser automatically
 echo.
 
+REM Suppress onboarding/usage stats prompt for a clean start
+set STREAMLIT_BROWSER_GATHERUSAGESTATS=false
+
+REM Launch the Streamlit app
 streamlit run src\dashboard.py
