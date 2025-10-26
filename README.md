@@ -3,6 +3,8 @@
 
 **Theme:** "Machine Learning Meets the UN Sustainable Development Goals (SDGs)"
 
+> PLP Community Article: see `docs/PLP_Community_Article.md` for a ready-to-post narrative.
+
 ### 🌱 Project Overview
 
 This project addresses **UN SDG 2: Zero Hunger** by developing an integrated AI-driven agricultural intelligence system that helps farmers optimize crop production, reduce food waste, and increase agricultural sustainability. The system combines multiple machine learning techniques from Week 2 concepts including supervised learning, neural networks, NLP, and reinforcement learning.
