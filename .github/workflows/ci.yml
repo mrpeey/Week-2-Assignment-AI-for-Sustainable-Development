@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies (lightweight)
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-lite.txt ]; then pip install -r requirements-lite.txt; fi
+          pip install fastapi "uvicorn[standard]" requests
+
+      - name: Start API server in background
+        run: |
+          nohup uvicorn src.api.main:app --host 127.0.0.1 --port 8000 &
+          echo $! > uvicorn.pid
+
+      - name: Wait for API health
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null; then
+              echo "API is up"; exit 0; fi; sleep 1; done
+          echo "API failed to start"; cat nohup.out || true; exit 1
+
+      - name: Run API tests
+        run: |
+          python test_api.py
+
+      - name: Stop API server
+        if: always()
+        run: |
+          if [ -f uvicorn.pid ]; then kill -9 $(cat uvicorn.pid) || true; fi
